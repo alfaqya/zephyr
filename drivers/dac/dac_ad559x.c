@@ -33,6 +33,7 @@ static int dac_ad559x_channel_setup(const struct device *dev,
 {
 	const struct dac_ad559x_config *config = dev->config;
 	struct dac_ad559x_data *data = dev->data;
+	int ret = 0;
 
 	if (channel_cfg->channel_id >= AD559X_PIN_MAX) {
 		LOG_ERR("Invalid channel number %d", channel_cfg->channel_id);
@@ -49,9 +50,31 @@ static int dac_ad559x_channel_setup(const struct device *dev,
 		return -ENOTSUP;
 	}
 
-	data->dac_conf |= BIT(channel_cfg->channel_id);
+	uint16_t gen_ctrl_reg = 0;
+	uint16_t AD559X_IO_LOCK_MASK = BIT(7);
+	/* Unlock IO config */
+	ret = mfd_ad559x_read_reg(config->mfd_dev, AD559X_REG_GEN_CTRL, 0, &gen_ctrl_reg);
+	if (ret < 0) {
+		return ret;
+	}
+    uint16_t unlocked_reg = gen_ctrl_reg & ~AD559X_IO_LOCK_MASK;
+    ret = mfd_ad559x_write_reg(config->mfd_dev, AD559X_REG_GEN_CTRL, unlocked_reg);
+	if (ret < 0) {
+		return ret;
+	}
+	/* Set Channel */
+    data->dac_conf |= BIT(channel_cfg->channel_id);
+    ret =  mfd_ad559x_write_reg(config->mfd_dev, AD559X_REG_LDAC_EN, data->dac_conf);
+	if (ret < 0) {
+		return ret;
+	}
+	/* Lock IO config */
+    ret = mfd_ad559x_write_reg(config->mfd_dev, AD559X_REG_GEN_CTRL, unlocked_reg | AD559X_IO_LOCK_MASK);
+	if (ret < 0) {
+		return ret;
+	}
 
-	return mfd_ad559x_write_reg(config->mfd_dev, AD559X_REG_LDAC_EN, data->dac_conf);
+	return ret;
 }
 
 static int dac_ad559x_write_value(const struct device *dev, uint8_t channel, uint32_t value)
